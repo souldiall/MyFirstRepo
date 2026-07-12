@@ -1,0 +1,165 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Multi-OS: Windows, AmazonLinux, and Ubuntu Web Servers with Apache, custom HTML, SG, and Name tag",
+
+  "Parameters": {
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "SubnetId": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "CustomHtml": {
+      "Type": "String"
+    },
+    "InstanceName": {
+      "Type": "String"
+    },
+    "SelectedRegion": {
+      "Type": "String",
+      "AllowedValues": [
+        "us-east-1",
+        "us-east-2",
+        "us-west-1",
+        "us-west-2"
+      ]
+    },
+    "AvailabilityZone": {
+      "Type": "AWS::EC2::AvailabilityZone::Name"
+    },
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t2.micro",
+      "AllowedValues": [
+        "t2.micro",
+        "t3.micro",
+        "t3.small"
+      ]
+    },
+	 "OS": {
+      "Type": "String",   
+      "AllowedValues": ["Ubuntu", "AmazonLinux", "Windows"]
+    }
+  },
+
+    "Mappings": {
+      "RegionMap": {
+       "us-east-1": {
+        "Ubuntu": "ami-0b6d9d3d33ba97d99",
+        "AmazonLinux": "ami-0c02fb55956c7d316",
+        "Windows": "ami-09639480113b0df96"
+       },
+       "us-east-2": {
+        "Ubuntu": "ami-0f2b4fc905b0bd1f1",
+        "AmazonLinux": "ami-00399ec92321828f5",
+        "Windows": "ami-0ae452a0c234d1923"
+       },
+       "us-west-1": {
+        "Ubuntu": "ami-07d9b9ddc6cd8dd30",
+        "AmazonLinux": "ami-0b2f6494ff0b07a0e",
+        "Windows": "ami-06d68239bc44b141b"
+       },
+       "us-west-2": {
+        "Ubuntu": "ami-0d527b8c289b4af7f",
+        "AmazonLinux": "ami-0892d3c7ee57c1fce",
+        "Windows": "ami-02df557e4e9e6c1ea"
+      }
+    }
+  },
+
+  "Conditions": {
+    "IsUbuntu": { "Fn::Equals": [{ "Ref": "OS" }, "Ubuntu"] },
+    "IsAmazonLinux": { "Fn::Equals": [{ "Ref": "OS" }, "AmazonLinux"] },
+    "IsWindows": { "Fn::Equals": [{ "Ref": "OS" }, "Windows"] }
+  },
+
+  "Resources": {
+    "WebSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable HTTP, SSH or RDP depending on OS",
+        "VpcId": { "Ref": "VpcId" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "Fn::If": [
+              "IsWindows",
+              {
+                "IpProtocol": "tcp",
+                "FromPort": 3389,
+                "ToPort": 3389,
+                "CidrIp": "0.0.0.0/0"
+              },
+              {
+                "IpProtocol": "tcp",
+                "FromPort": 22,
+                "ToPort": 22,
+                "CidrIp": "0.0.0.0/0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    "WebServer": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            { "Ref": "SelectedRegion" },
+			{ "Ref": "OS" }
+          ]
+        },
+        "InstanceType": { "Ref": "InstanceType" },
+        "KeyName": { "Ref": "KeyName" },
+        "SubnetId": { "Ref": "SubnetId" },
+        "SecurityGroupIds": [
+          { "Ref": "WebSecurityGroup" }
+        ],
+        "Tags": [
+          { "Key": "Name", "Value": { "Ref": "InstanceName" } },
+          { "Key": "Environment", "Value": "Dev" },
+          { "Key": "Owner", "Value": "Souleymane" },
+          { "Key": "OS", "Value": { "Ref": "OS" } }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::If": [
+              "IsWindows",
+              {
+                "Fn::Sub": "<powershell>\nInstall-WindowsFeature -name Web-Server\nSet-Content -Path \"C:\\inetpub\\wwwroot\\index.html\" -Value \"${CustomHtml}\"\n</powershell>"
+              },
+              {
+                "Fn::If": [
+                  "IsAmazonLinux",
+                  {
+                    "Fn::Sub": "#!/bin/bash\nyum update -y\nyum install -y httpd\nsystemctl enable httpd\nsystemctl start httpd\necho \"${CustomHtml}\" > /var/www/html/index.html\n"
+                  },
+                  {
+                    "Fn::Sub": "#!/bin/bash\napt update -y\napt install -y apache2\necho \"${CustomHtml}\" > /var/www/html/index.html\nsystemctl restart apache2\n"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+
+  "Outputs": {
+    "PublicIP": {
+      "Value": { "Fn::GetAtt": ["WebServer", "PublicIp"] }
+    }
+  }
+}
