@@ -3,6 +3,6 @@ variable "ami-id" {
   description = "The AMI ID for the ALB instances"
 }
 variable "instance-type" {
-  default     = "t2.micro"
+  default     = "t3.micro"
   description = "The instance type for the ALB instances"
 }
