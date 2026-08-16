@@ -396,4 +396,3 @@ resource "aws_lb_target_group_attachment" "app2_attach" {
   target_id        = aws_instance.app2.id
   port             = 80
 }
->>>>>>> 54e6e2b (Initial commit)
