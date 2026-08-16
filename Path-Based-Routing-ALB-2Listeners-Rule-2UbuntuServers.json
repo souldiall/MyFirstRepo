@@ -1,0 +1,220 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "ALB with 2 Ubuntu EC2 Instances and Listener Rules for /app1 and /app2",
+
+  "Parameters": {
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "Subnet1": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "Subnet2": {
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "KeyPairName": {
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    }
+  },
+
+  "Resources": {
+    "InstanceSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow HTTP",
+        "VpcId": { "Ref": "VpcId" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+
+    "UbuntuInstance1": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": "ami-0b6d9d3d33ba97d99",
+        "InstanceType": "t3.micro",
+        "KeyName": { "Ref": "KeyPairName" },
+        "SubnetId": { "Ref": "Subnet1" },
+        "SecurityGroupIds": [
+          { "Ref": "InstanceSecurityGroup" }
+        ],
+        "Tags": [
+          { "Key": "Name", "Value": "Server1" }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "apt update -y\n",
+                "apt install apache2 -y\n",
+                "systemctl enable apache2\n",
+                "systemctl start apache2\n",
+                "echo '<h1>This is Server 1</h1>' > /var/www/html/index.html\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+
+    "UbuntuInstance2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": "ami-0b6d9d3d33ba97d99",
+        "InstanceType": "t3.micro",
+        "KeyName": { "Ref": "KeyPairName" },
+        "SubnetId": { "Ref": "Subnet2" },
+        "SecurityGroupIds": [
+          { "Ref": "InstanceSecurityGroup" }
+        ],
+        "Tags": [
+          { "Key": "Name", "Value": "Server2" }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "apt update -y\n",
+                "apt install apache2 -y\n",
+                "systemctl enable apache2\n",
+                "systemctl start apache2\n",
+                "echo '<h1>This is Server 2</h1>' > /var/www/html/index.html\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+
+    "WebTargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VpcId" },
+        "Protocol": "HTTP",
+        "Port": 80,
+        "TargetType": "instance",
+        "HealthCheckPath": "/",
+        "Targets": [
+          {
+            "Id": { "Ref": "UbuntuInstance1" },
+            "Port": 80
+          },
+          {
+            "Id": { "Ref": "UbuntuInstance2" },
+            "Port": 80
+          }
+        ]
+      }
+    },
+
+    "ALBSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow HTTP to ALB",
+        "VpcId": { "Ref": "VpcId" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+
+    "ApplicationLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Scheme": "internet-facing",
+        "Subnets": [
+          { "Ref": "Subnet1" },
+          { "Ref": "Subnet2" }
+        ],
+        "SecurityGroups": [
+          { "Ref": "ALBSecurityGroup" }
+        ]
+      }
+    },
+
+    "HTTPListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "LoadBalancerArn": { "Ref": "ApplicationLoadBalancer" },
+        "Port": 80,
+        "Protocol": "HTTP",
+        "DefaultActions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": { "Ref": "WebTargetGroup" }
+          }
+        ]
+      }
+    },
+
+    "App1Rule": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "ListenerArn": { "Ref": "HTTPListener" },
+        "Priority": 1,
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": ["/app1"]
+          }
+        ],
+        "Actions": [
+          {
+            "Type": "fixed-response",
+            "FixedResponseConfig": {
+              "StatusCode": "200",
+              "ContentType": "text/html",
+              "MessageBody": "<!DOCTYPE html><html><head><title>Application 1</title><style>body{font-family: Arial, sans-serif;text-align:center;margin-top:100px;background-color:#e8f4fd;} .container{width:60%;margin:auto;padding:30px;background:white;border-radius:10px;box-shadow:0px 0px 10px gray;} h1{color:#0078d7;} </style></head><body><div class=\\\"container\\\"><h1>Welcome to Application 1</h1><h2>Path Accessed: /app1</h2><p>This request was routed by AWS ALB using Path-Based Routing.</p><p><strong>Target Group:</strong> TG-App1</p></div></body></html>"
+            }
+          }
+        ]
+      }
+    },
+
+    "App2Rule": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "ListenerArn": { "Ref": "HTTPListener" },
+        "Priority": 2,
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "Values": ["/app2"]
+          }
+        ],
+        "Actions": [
+          {
+            "Type": "fixed-response",
+            "FixedResponseConfig": {
+              "StatusCode": "200",
+              "ContentType": "text/html",
+              "MessageBody": "<!DOCTYPE html><html><head><title>Application 2</title><style>body{font-family: Arial, sans-serif;text-align:center;margin-top:100px;background-color:#fef3e2;} .container{width:60%;margin:auto;padding:30px;background:white;border-radius:10px;box-shadow:0px 0px 10px gray;} h1{color:#ff6b00;} </style></head><body><div class=\\\"container\\\"><h1>Welcome to Application 2</h1><h2>Path Accessed: /app2</h2><p>This request was routed by AWS ALB using Path-Based Routing.</p><p><strong>Target Group:</strong> TG-App2</p></div></body></html>"
+            }
+          }
+        ]
+      }
+    }
+  },
+
+  "Outputs": {
+    "ALBDNS": {
+      "Description": "DNS Name of the ALB",
+      "Value": { "Fn::GetAtt": ["ApplicationLoadBalancer", "DNSName"] }
+    }
+  }
+}
